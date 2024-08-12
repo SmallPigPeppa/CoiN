@@ -12,6 +12,7 @@ from transformers.trainer import (
     ShardedDDPOption,
     logger,
 )
+from collections import defaultdict
 from typing import List, Optional
 from peft.utils import WEIGHTS_NAME, set_peft_model_state_dict
 from ETrain.Train.Base_trainer import *
@@ -250,6 +251,37 @@ class LLaVATrainer(Trainer):
         else:
             safe_save_model_for_hf_trainer(trainer=self,
                                         output_dir=training_args.output_dir)
+            
+
+
+    def after_train(self):
+        current_task_train_dataloader = self.train_dataloader
+
+        memory = []
+        limit = 1000
+        for idx_b, b in enumerate(current_task_train_dataloader):
+                memory.append(b)
+                if idx_b == limit: break
+
+        self.model.cpu()
+        fisher = defaultdict(list)
+        for n, p in self.model.named_parameters():
+            fisher[n] = torch.zeros(p.size())
+
+        for _, batch in enumerate(memory):
+            self.model.zero_grad()
+            outputs = self.model(input_ids=batch["input_ids"],
+                                    attention_mask=batch["attention_mask"],
+                                    labels=batch["labels"])
+            loss = outputs.loss
+            loss.backward()
+            for n, p in self.model.named_parameters():
+                if p.grad is not None:
+                    fisher[n].data += p.grad.data ** 2
+
+        for name_f,_ in fisher.items():
+            fisher[name_f] /= limit
+        self.model.zero_grad()
 
 
 def load_model_from_previous_task(model, previous_task_model_path):
