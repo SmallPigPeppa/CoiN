@@ -145,6 +145,9 @@ def train():
     #     trainer.train(resume_from_checkpoint=True)
     # else:
     trainer.train()
+
+    # trainer.after_train()
+    
     trainer.save_state()
 
     trainer.save_trained_model(training_args)
