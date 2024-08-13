@@ -8,6 +8,3 @@ sh ./scripts/LLaVA/COIN/Train_rank192/5_VizWiz.sh
 sh ./scripts/LLaVA/COIN/Train_rank192/6_Grounding.sh
 sh ./scripts/LLaVA/COIN/Train_rank192/7_vqav2.sh
 sh ./scripts/LLaVA/COIN/Train_rank192/8_OCRVQA.sh
-
-sh ./scripts/LLaVA/COIN/Eval_rank256/eval_Trained.sh
-sh ./scripts/LLaVA/COIN/Eval_rank192/eval_Trained.sh
