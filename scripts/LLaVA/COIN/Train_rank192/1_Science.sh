@@ -11,7 +11,7 @@ MODEL_VERSION="vicuna-7b-v1.5"
 
 deepspeed --include localhost:0,1,2,3,4,5,6,7 --master_port 29600 ETrain/Train/LLaVA/train_mem.py \
     --deepspeed ./scripts/zero3_offload.json \
-    --lora_enable True --lora_r 256 --lora_alpha 256 --mm_projector_lr 2e-5 \
+    --lora_enable True --lora_r 192 --lora_alpha 256 --mm_projector_lr 2e-5 \
     --model_name_or_path ./checkpoints/LLaVA/Vicuna/vicuna-7b-v1.5 \
     --pretrain_mm_mlp_adapter ./checkpoints/LLaVA/Vicuna/vicuna-7b-v1.5-projector/mm_projector.bin \
     --version $PROMPT_VERSION \
@@ -25,7 +25,7 @@ deepspeed --include localhost:0,1,2,3,4,5,6,7 --master_port 29600 ETrain/Train/L
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/LLaVA/Instruction/CoIN-rank256/ScienceQA \
+    --output_dir ./checkpoints/LLaVA/Instruction/CoIN-rank192/ScienceQA \
     --num_train_epochs 1 \
     --per_device_train_batch_size 14 \
     --per_device_eval_batch_size 16 \
