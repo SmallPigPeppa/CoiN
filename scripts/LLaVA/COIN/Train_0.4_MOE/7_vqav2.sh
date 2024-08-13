@@ -1,6 +1,6 @@
 ################## VICUNA ##################
 PROMPT_VERSION=v1
-MODEL_VERSION="vicuna-7b-v1.3"
+MODEL_VERSION="vicuna-7b-v1.5"
 ################## VICUNA ##################
 
 
@@ -12,10 +12,11 @@ MODEL_VERSION="vicuna-7b-v1.3"
 deepspeed --include localhost:0,1,2,3,4,5,6,7 --master_port 29600 ETrain/Train/LLaVA/train_mem.py \
     --deepspeed ./scripts/zero3_offload.json \
     --lora_enable True --lora_r 128 --lora_alpha 256 --mm_projector_lr 2e-5 \
-    --model_name_or_path ./checkpoints/LLaVA/Vicuna/vicuna-13b-v1.5 \
-    --previous_task_model_path ./checkpoints/LLaVA/Instruction/CoIN-13b/VizWiz \
+    --expert_num 8 \
+    --model_name_or_path ./checkpoints/LLaVA/Vicuna/vicuna-7b-v1.5 \
+    --previous_task_model_path ./checkpoints/LLaVA/Instruction/CoIN_0_4_MOE/Grounding \
     --version $PROMPT_VERSION \
-    --data_path ./playground/Instructions_Type1/Grounding/train.json \
+    --data_path ./playground/Instructions_slim_0.4/VQAv2/train.json \
     --image_folder ./cl_dataset \
     --vision_tower ./checkpoints/LLaVA/clip-vit-large-patch14-336 \
     --mm_projector_type mlp2x_gelu \
@@ -25,9 +26,9 @@ deepspeed --include localhost:0,1,2,3,4,5,6,7 --master_port 29600 ETrain/Train/L
     --image_aspect_ratio pad \
     --group_by_modality_length True \
     --bf16 True \
-    --output_dir ./checkpoints/LLaVA/Instruction/CoIN-13b/Grounding \
+    --output_dir ./checkpoints/LLaVA/Instruction/CoIN_0_4_MOE/VQAv2 \
     --num_train_epochs 1 \
-    --per_device_train_batch_size 6 \
+    --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 16 \
     --gradient_accumulation_steps 8 \
     --evaluation_strategy "no" \
