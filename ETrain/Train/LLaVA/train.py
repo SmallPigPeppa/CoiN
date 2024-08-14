@@ -61,6 +61,8 @@ class ModelArguments:
     mm_use_im_patch_token: bool = field(default=True)
     mm_vision_select_feature: Optional[str] = field(default="patch")
 
+    task_embedding_dim: Optional[int] = field(default=64)
+    expert_num: Optional[int] = field(default=None)
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
@@ -131,7 +133,7 @@ def train():
 
     if model_args.previous_task_model_path is not None:
         # load model from previous task
-        load_model_from_previous_task(model, model_args.previous_task_model_path)
+        load_model_from_previous_task(model, model_args)
 
     data_module = create_LLaVA_data_module(tokenizer, data_args, local_rank)
 
@@ -143,9 +145,14 @@ def train():
     #     trainer.train(resume_from_checkpoint=True)
     # else:
     trainer.train()
+
     trainer.save_state()
 
     trainer.save_trained_model(training_args)
+    
+    # trainer.after_train()
+    
+
 
 
 if __name__ == "__main__":
