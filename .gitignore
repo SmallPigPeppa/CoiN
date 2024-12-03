@@ -26,7 +26,7 @@ images_to_show
 playground
 FigurePlot
 
-results
+results/*
 checkpoints
 cl_dataset
 ckpts*

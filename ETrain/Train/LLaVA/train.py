@@ -141,7 +141,6 @@ def train():
         training_args.EWC = model_args.EWC
         model.base_model.model.EWC = model_args.EWC
         model.base_model.model.EWC_lambda = model_args.EWC_lambda
-
     if model_args.LWF:
         training_args.LWF = model_args.LWF
         model.base_model.model.LWF = model_args.LWF
