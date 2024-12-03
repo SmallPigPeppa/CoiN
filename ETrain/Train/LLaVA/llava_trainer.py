@@ -1278,8 +1278,6 @@ class LLaVATrainer(Trainer):
             # Clean the state at the end of training
             delattr(self, "_past")
 
-        logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
-
         for name_f,_ in fisher.items():
             fisher[name_f] /= limit
 
