@@ -30,7 +30,18 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
-from deepspeed.utils import safe_get_full_fp32_param, safe_get_full_grad, safe_get_full_optimizer_state
+from deepspeed import comm as dist
+from deepspeed.utils import safe_get_full_fp32_param, safe_get_full_grad, safe_get_full_optimizer_state, safe_get_local_fp32_param
+
+if is_sagemaker_mp_enabled():
+    import smdistributed.modelparallel.torch as smp
+    from smdistributed.modelparallel import __version__ as SMP_VERSION
+
+    IS_SAGEMAKER_MP_POST_1_10 = version.parse(SMP_VERSION) >= version.parse("1.10")
+
+    from .trainer_pt_utils import smp_forward_backward, smp_forward_only, smp_gather, smp_nested_concat
+else:
+    IS_SAGEMAKER_MP_POST_1_10 = False
 
 # Integrations must be imported before ML frameworks:
 # isort: off
@@ -427,11 +438,247 @@ class LLaVATrainer(Trainer):
         else:
             safe_save_model_for_hf_trainer(trainer=self,
                                         output_dir=training_args.output_dir)
-            
-    # def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+    
 
-    #     loss = super.training_step(self, model, inputs)
-    #     return loss
+    ### LWF
+    def before_train(self):
+        self._train_batch_size = self.args.train_batch_size
+
+        # Setting up training control variables:
+        # number of training epochs: num_train_epochs
+        # number of training steps per epoch: num_update_steps_per_epoch
+        # total number of training steps to execute: max_steps
+        args = self.args
+        self._train_batch_size = 1
+        logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
+        # Data loader and number of training steps
+        train_dataloader = self.get_train_dataloader()
+
+        total_train_batch_size = self._train_batch_size * args.gradient_accumulation_steps * args.world_size
+        ignore_keys_for_eval = None
+        len_dataloader = None
+        if has_length(train_dataloader):
+            len_dataloader = len(train_dataloader)
+            num_update_steps_per_epoch = len_dataloader // args.gradient_accumulation_steps
+            num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
+            num_examples = self.num_examples(train_dataloader)
+            if args.max_steps > 0:
+                max_steps = args.max_steps
+                num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
+                    args.max_steps % num_update_steps_per_epoch > 0
+                )
+                # May be slightly incorrect if the last batch in the training dataloader has a smaller size but it's
+                # the best we can do.
+                num_train_samples = args.max_steps * total_train_batch_size
+            else:
+                max_steps = math.ceil(args.num_train_epochs * num_update_steps_per_epoch)
+                num_train_epochs = math.ceil(args.num_train_epochs)
+                num_train_samples = self.num_examples(train_dataloader) * args.num_train_epochs
+        elif args.max_steps > 0:  # Rely on max_steps when dataloader does not have a working size
+            max_steps = args.max_steps
+            # Setting a very large number of epochs so we go as many times as necessary over the iterator.
+            num_train_epochs = sys.maxsize
+            num_update_steps_per_epoch = max_steps
+            num_examples = total_train_batch_size * args.max_steps
+            num_train_samples = args.max_steps * total_train_batch_size
+        else:
+            raise ValueError(
+                "args.max_steps must be set to a positive value if dataloader does not have a length, was"
+                f" {args.max_steps}"
+            )
+
+        # delay_optimizer_creation = (
+        #     self.sharded_ddp is not None
+        #     and self.sharded_ddp != ShardedDDPOption.SIMPLE
+        #     or is_sagemaker_mp_enabled()
+        #     or self.fsdp is not None
+        #     or self.is_fsdp_enabled
+        # )
+
+        # We need to reset the scheduler, as its parameters may be different on subsequent calls
+        # if self._created_lr_scheduler:
+        #     self.lr_scheduler = None
+        #     self._created_lr_scheduler = False
+
+        if self.is_deepspeed_enabled:
+            self.optimizer, self.lr_scheduler = deepspeed_init(self, num_training_steps=max_steps)
+
+        # if not delay_optimizer_creation:
+        #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+
+        # trial = None
+
+        # Activate gradient checkpointing if needed
+        # if args.gradient_checkpointing:
+        #     self.model.gradient_checkpointing_enable()
+
+        model = self._wrap_model(self.model_wrapped)
+
+        if dist.get_rank() == 0:
+            logits = []
+            for idx, inputs in enumerate(train_dataloader.dataset.list_data_dict):
+                logits.append({inputs['question_id']:{}})
+        else:
+            logits = []
+            for idx, inputs in enumerate(train_dataloader.dataset.list_data_dict):
+                logits.append(None)
+        
+        dist.broadcast_object_list(logits, src=0, device=torch.cuda.current_device())
+
+        # resume_from_checkpoint = None
+        # if (is_sagemaker_mp_enabled() or self.is_fsdp_enabled) and resume_from_checkpoint is not None:
+        #     self._load_from_checkpoint(resume_from_checkpoint, model)
+
+        # as the model is wrapped, don't use `accelerator.prepare`
+        # this is for unhandled cases such as
+        # Fairscale Sharded DDP, FSDP-XLA, SageMaker MP/DP, DataParallel, IPEX
+        use_accelerator_prepare = True if model is self.model else False
+
+        # prepare using `accelerator` prepare
+        if use_accelerator_prepare:
+            self.model.train()
+            if hasattr(self.lr_scheduler, "step"):
+                if self.use_apex:
+                    model = self.accelerator.prepare(self.model)
+                else:
+                    model, self.optimizer = self.accelerator.prepare(self.model, self.optimizer)
+            else:
+                # to handle cases wherein we pass "DummyScheduler" such as when it is specified in DeepSpeed config.
+                model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(
+                    self.model, self.optimizer, self.lr_scheduler
+                )
+
+        if self.is_fsdp_enabled:
+            self.model = model
+
+        # for the rest of this function `model` is the outside model, whether it was wrapped or not
+        if model is not self.model:
+            self.model_wrapped = model
+
+        # backward compatibility
+        if self.is_deepspeed_enabled:
+            self.deepspeed = self.model_wrapped
+
+        # deepspeed ckpt loading
+        # if resume_from_checkpoint is not None and self.is_deepspeed_enabled:
+        #     deepspeed_load_checkpoint(self.model_wrapped, resume_from_checkpoint)
+
+        self.state.epoch = 0
+        start_time = time.time()
+        epochs_trained = 0
+        steps_trained_in_current_epoch = 0
+        steps_trained_progress_bar = None
+
+        # Check if continuing training from a checkpoint
+        # if resume_from_checkpoint is not None and os.path.isfile(
+        #     os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME)
+        # ):
+        #     self.state = TrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+        #     epochs_trained = self.state.global_step // num_update_steps_per_epoch
+        #     if not args.ignore_data_skip:
+        #         steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
+        #         steps_trained_in_current_epoch *= args.gradient_accumulation_steps
+        #     else:
+        #         steps_trained_in_current_epoch = 0
+
+        #     logger.info("  Continuing training from checkpoint, will skip to saved global_step")
+        #     logger.info(f"  Continuing training from epoch {epochs_trained}")
+        #     logger.info(f"  Continuing training from global step {self.state.global_step}")
+        #     if not args.ignore_data_skip:
+        #         logger.info(
+        #             f"  Will skip the first {epochs_trained} epochs then the first"
+        #             f" {steps_trained_in_current_epoch} batches in the first epoch."
+        #         )
+
+        # Update the references
+        # self.callback_handler.model = self.model
+        # self.callback_handler.optimizer = self.optimizer
+        # self.callback_handler.lr_scheduler = self.lr_scheduler
+        # self.callback_handler.train_dataloader = train_dataloader
+        # if self.hp_name is not None and self._trial is not None:
+        #     # use self._trial because the SigOpt/Optuna hpo only call `_hp_search_setup(trial)` instead of passing trial
+        #     # parameter to Train when using DDP.
+        #     self.state.trial_name = self.hp_name(self._trial)
+        # if trial is not None:
+        #     assignments = trial.assignments if self.hp_search_backend == HPSearchBackend.SIGOPT else trial
+        #     self.state.trial_params = hp_params(assignments)
+        # else:
+        #     self.state.trial_params = None
+        # This should be the same if the state has been saved but in case the training arguments changed, it's safer
+        # to set this after the load.
+        # self.state.max_steps = max_steps
+        # self.state.num_train_epochs = num_train_epochs
+        # self.state.is_local_process_zero = self.is_local_process_zero()
+        # self.state.is_world_process_zero = self.is_world_process_zero()
+
+        # tr_loss is a tensor to avoid synchronization of TPUs through .item()
+        # tr_loss = torch.tensor(0.0).to(args.device)
+        # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
+        # self._total_loss_scalar = 0.0
+        # self._globalstep_last_logged = self.state.global_step
+        # model.zero_grad()
+
+        # self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
+
+        # Skip the first epochs_trained epochs to get the random state of the dataloader at the right point.
+        # if not args.ignore_data_skip:
+        #     for epoch in range(epochs_trained):
+        #         for _ in train_dataloader:
+        #             break
+
+        # total_batched_samples = 0
+
+        logits_index =[]
+
+        for epoch in range(0, num_train_epochs):
+            epoch_iterator = train_dataloader
+
+            # Reset the past mems state at the beginning of each epoch if necessary.
+            if args.past_index >= 0:
+                self._past = None
+
+            step = -1
+            for step, inputs in enumerate(epoch_iterator):
+                # total_batched_samples += 1
+
+                # Skip past any already trained steps if resuming training
+                # if steps_trained_in_current_epoch > 0:
+                #     steps_trained_in_current_epoch -= 1
+                #     if steps_trained_progress_bar is not None:
+                #         steps_trained_progress_bar.update(1)
+                #     continue
+                # elif steps_trained_progress_bar is not None:
+                #     steps_trained_progress_bar.close()
+                #     steps_trained_progress_bar = None
+
+                with self.accelerator.accumulate(model):
+                    model.train()
+                    inputs = self._prepare_inputs(inputs)
+
+                    with self.compute_loss_context_manager():
+                        outputs = model(**inputs)
+                        for idx, question_id in enumerate(inputs['question_ids']):
+                            for index, logit in enumerate(logits):
+                                if question_id in logit.keys():
+                                    logits_index.append(index)
+                                    logit[question_id] = outputs['logits'][idx].clone().cpu()
+
+        outputs = [None for _ in range(dist.get_world_size())]
+        logits_results = []
+        for index in logits_index:
+            logits_results.append(logits[index])
+        dist.all_gather_object(outputs, logits_results)
+
+        final_logits = {}
+        for rank_output in outputs:
+            for single_sample in rank_output:
+                for key, value in single_sample.items():
+                    if key not in final_logits.keys():
+                        final_logits[key] = value
+
+        # model.module.base_model.model.previous_logits = final_logits
+        print('Finished training...')
+        return final_logits
 
     def after_train(self):
         current_task_train_dataloader = self.get_train_dataloader()
@@ -439,11 +686,9 @@ class LLaVATrainer(Trainer):
         memory = []
         limit = 1000
         for idx_b, b in enumerate(current_task_train_dataloader):
-                memory.append(b)
-                if idx_b == limit: break
-    
+            memory.append(b)
+            if idx_b == limit: break
 
-        self._train_batch_size = 1
         logger.debug(f"Currently training with a batch size of: {self._train_batch_size}")
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
@@ -536,8 +781,9 @@ class LLaVATrainer(Trainer):
         optpar = defaultdict(list)
         for n, p in model.named_parameters():
             if p.requires_grad:
-                fisher[n] = torch.zeros(p.ds_shape)
-                optpar[n] = torch.reshape(torch.Tensor(p.ds_data.cpu().data),p.ds_shape)
+                para = safe_get_full_fp32_param(p)
+                optpar[n] = torch.Tensor(para.clone().cpu())
+                fisher[n] = torch.zeros(para.shape)
 
         resume_from_checkpoint = None
         if (is_sagemaker_mp_enabled() or self.is_fsdp_enabled) and resume_from_checkpoint is not None:
@@ -547,11 +793,6 @@ class LLaVATrainer(Trainer):
         # this is for unhandled cases such as
         # Fairscale Sharded DDP, FSDP-XLA, SageMaker MP/DP, DataParallel, IPEX
         use_accelerator_prepare = True if model is self.model else False
-
-        if delay_optimizer_creation:
-            if use_accelerator_prepare:
-                self.model = self.accelerator.prepare(self.model)
-            self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
@@ -581,25 +822,6 @@ class LLaVATrainer(Trainer):
         # deepspeed ckpt loading
         if resume_from_checkpoint is not None and self.is_deepspeed_enabled:
             deepspeed_load_checkpoint(self.model_wrapped, resume_from_checkpoint)
-
-        # Check if saved optimizer or scheduler states exist
-        self._load_optimizer_and_scheduler(resume_from_checkpoint)
-
-        # important: at this point:
-        # self.model         is the Transformers Model
-        # self.model_wrapped is DDP(Transformers Model), Deepspeed(Transformers Model), etc.
-
-        # Train!
-        logger.info("***** Running training *****")
-        logger.info(f"  Num examples = {num_examples:,}")
-        logger.info(f"  Num Epochs = {num_train_epochs:,}")
-        logger.info(f"  Instantaneous batch size per device = {self.args.per_device_train_batch_size:,}")
-        if self.args.per_device_train_batch_size != self._train_batch_size:
-            logger.info(f"  Training with DataParallel so batch size has been adjusted to: {self._train_batch_size:,}")
-        logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size:,}")
-        logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
-        logger.info(f"  Total optimization steps = {max_steps:,}")
-        logger.info(f"  Number of trainable parameters = {get_model_param_count(model, trainable_only=True):,}")
 
         self.state.epoch = 0
         start_time = time.time()
@@ -715,16 +937,13 @@ class LLaVATrainer(Trainer):
                 model.zero_grad()
                 with self.accelerator.accumulate(model):
                     tr_loss_step = self.training_step(model, inputs)
-
                 
                 ### compute fisher
                 for n, p in model.named_parameters():
                     if p.requires_grad:
                         hp_grad = safe_get_full_grad(p)
                         if hp_grad is not None:
-                            fisher[n].data += hp_grad.data ** 2
-
-                self.current_flos += float(self.floating_point_ops(inputs))
+                            fisher[n].data += (hp_grad.data ** 2).cpu()
 
                 is_last_step_and_steps_less_than_grad_acc = (
                     steps_in_epoch <= args.gradient_accumulation_steps and (step + 1) == steps_in_epoch
@@ -742,38 +961,6 @@ class LLaVATrainer(Trainer):
                         version.parse(accelerate_version) <= version.parse("0.20.3")
                     ):
                         self.accelerator.gradient_state._set_sync_gradients(True)
-
-                    # Gradient clipping
-                    if args.max_grad_norm is not None and args.max_grad_norm > 0:
-                        # deepspeed does its own clipping
-
-                        if self.do_grad_scaling:
-                            # Reduce gradients first for XLA
-                            if is_torch_tpu_available():
-                                gradients = xm._fetch_gradients(self.optimizer)
-                                xm.all_reduce("sum", gradients, scale=1.0 / xm.xrt_world_size())
-                            # AMP: gradients need unscaling
-                            self.scaler.unscale_(self.optimizer)
-
-                        if is_sagemaker_mp_enabled() and args.fp16:
-                            self.optimizer.clip_master_grads(args.max_grad_norm)
-                        elif hasattr(self.optimizer, "clip_grad_norm"):
-                            # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
-                            self.optimizer.clip_grad_norm(args.max_grad_norm)
-                        elif hasattr(model, "clip_grad_norm_"):
-                            # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
-                            model.clip_grad_norm_(args.max_grad_norm)
-                        elif self.use_apex:
-                            # Revert to normal clipping otherwise, handling Apex or full precision
-                            nn.utils.clip_grad_norm_(
-                                amp.master_params(self.optimizer),
-                                args.max_grad_norm,
-                            )
-                        else:
-                            self.accelerator.clip_grad_norm_(
-                                model.parameters(),
-                                args.max_grad_norm,
-                            )
 
                     model.zero_grad()
                     self.state.global_step += 1
@@ -801,38 +988,6 @@ class LLaVATrainer(Trainer):
             delattr(self, "_past")
 
         logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
-        if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
-            # Wait for everyone to get here so we are sur the model has been saved by process 0.
-            if is_torch_tpu_available():
-                xm.rendezvous("load_best_model_at_end")
-            elif args.parallel_mode == ParallelMode.DISTRIBUTED:
-                dist.barrier()
-            elif is_sagemaker_mp_enabled():
-                smp.barrier()
-
-            self._load_best_model()
-
-        # add remaining tr_loss
-        self._total_loss_scalar += tr_loss.item()
-        train_loss = self._total_loss_scalar / self.state.global_step
-
-        self.store_flos()
-        self.is_in_train = False
-
-        run_dir = self._get_output_dir(trial)
-        checkpoints_sorted = self._sorted_checkpoints(use_mtime=False, output_dir=run_dir)
-
-        # Delete the last checkpoint when save_total_limit=1 if it's different from the best checkpoint and process allowed to save.
-        if self.args.should_save and self.state.best_model_checkpoint is not None and self.args.save_total_limit == 1:
-            for checkpoint in checkpoints_sorted:
-                if not os.path.samefile(checkpoint, self.state.best_model_checkpoint):
-                    logger.info(f"Deleting older checkpoint [{checkpoint}] due to args.save_total_limit")
-                    shutil.rmtree(checkpoint)
-
-        self.control = self.callback_handler.on_train_end(args, self.state, self.control)
-
-        # Wait for the checkpoint to be uploaded.
-        self._finish_current_push()
 
         for name_f,_ in fisher.items():
             fisher[name_f] /= limit

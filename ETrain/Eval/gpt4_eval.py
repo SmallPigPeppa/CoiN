@@ -5,7 +5,7 @@ import os
 import openai
 from openai import OpenAI
 import time
-
+from tqdm import tqdm
 openai.api_key = "sk-4LGwzEGZgXtr4onW2616D6BfCe2945B190Bd6299Cc1fCd14"
 openai.base_url = "https://api.gpt.ge/v1/"
 openai.default_headers = {"x-foo": "true"}
@@ -51,7 +51,7 @@ if __name__ == '__main__':
     os.makedirs(os.path.dirname(answers_file), exist_ok=True)
     ans_file = open(answers_file, "w")
     
-    for index, sample in enumerate(eval_samples):
+    for index, sample in enumerate(tqdm(eval_samples)):
         output = get_eval(sample, args.max_tokens)
         results = {"question_id": index,"prompt": sample,"text": output}
 

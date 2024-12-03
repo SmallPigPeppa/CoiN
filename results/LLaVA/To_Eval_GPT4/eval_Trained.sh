@@ -6,7 +6,7 @@
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/ImageNet/Multitask/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/GQA/Multitask/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/VizWiz/Multitask/prompt_to_eval.json
-python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Grounding/Multitask/prompt_to_eval.json
+# python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Grounding/Multitask/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/VQAv2/Multitask/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/OCRVQA/Multitask/prompt_to_eval.json
 
@@ -16,7 +16,7 @@ python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Groundi
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/ImageNet/Zero_shot/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/GQA/Zero_shot/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/VizWiz/Zero_shot/prompt_to_eval.json
-python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Grounding/Zero_shot/prompt_to_eval.json
+# python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Grounding/Zero_shot/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/VQAv2/Zero_shot/prompt_to_eval.json
 # python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/OCRVQA/Zero_shot/prompt_to_eval.json
 
@@ -82,6 +82,8 @@ python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Groundi
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ScienceQA/Grounding
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ScienceQA/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ScienceQA/OCRVQA
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ScienceQA/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ScienceQA/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/ImageNet
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/GQA
@@ -89,26 +91,38 @@ python ./ETrain/Eval/gpt4_eval.py --eval-path results/LLaVA/To_Eval_GPT4/Groundi
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/Grounding
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/OCRVQA
-
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/TextVQA/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/GQA
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/VizWiz
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/Grounding
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/OCRVQA
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/ImageNet/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/VizWiz
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/Grounding
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/OCRVQA
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/GQA/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VizWiz/Grounding
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VizWiz/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VizWiz/OCRVQA
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VizWiz/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VizWiz/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/Grounding/VQAv2
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/Grounding/OCRVQA
+# python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/Grounding/Multitask
+# python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/Grounding/Zero_shot
 
 # python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VQAv2/OCRVQA
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VQAv2/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/VQAv2/Zero_shot
 
-
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/OCRVQA/Multitask
+python ./ETrain/Eval/evaluate_score.py --dir results/LLaVA/To_Eval_GPT4/OCRVQA/Zero_shot
