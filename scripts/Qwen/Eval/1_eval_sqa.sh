@@ -12,7 +12,7 @@ else
 fi
 
 if [ ! -n "$2" ] ;then
-    MODELPATH='./checkpoints/Qwen/Qwen-VL-Chat'
+    MODELPATH='./checkpoints/Qwen/Qwen-VL'
 else
     MODELPATH=$2
 fi
@@ -22,7 +22,7 @@ RESULT_DIR="./results/Qwen/ScienceQA"
 for IDX in $(seq 0 $((CHUNKS-1))); do
     CUDA_VISIBLE_DEVICES=${GPULIST[$IDX]} python -m ETrain.Eval.Qwen.model_vqa \
         --model-path $MODELPATH \
-        --model-base ./checkpoints/Qwen/Qwen-VL-Chat \
+        --model-base ./checkpoints/Qwen/Qwen-VL \
         --question-file ./playground/Instructions_Original/ScienceQA/test.json \
         --image-folder ./cl_dataset \
         --answers-file $RESULT_DIR/$STAGE/${CHUNKS}_${IDX}.jsonl \
