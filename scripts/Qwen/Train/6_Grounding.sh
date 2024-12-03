@@ -11,13 +11,8 @@ MASTER_PORT=6002
 MODEL="./checkpoints/Qwen/Qwen-VL" # Set the path if you do not want to load from huggingface directly
 # ATTENTION: specify the path to your training data, which should be a json file consisting of a list of conversations.
 # See the section for finetuning in README for more information.
-<<<<<<< HEAD:scripts/Qwen/Train/6_Grounding.sh
 OUTPUT_MODEL_PATH="./checkpoints/Qwen/Grounding"
 PREVIOUS_MODEL_PATH="./checkpoints/Qwen/VizWiz"
-=======
-OUTPUT_MODEL_PATH="./checkpoints/Qwen/CoIN_VL/Grounding"
-PREVIOUS_MODEL_PATH="./checkpoints/Qwen/CoIN_VL/VizWiz"
->>>>>>> aa77c0569e0888415820a676fd218fa14b7d8142:scripts/Qwen/Train/6_VisualGenome.sh
 DATA="playground/Instructions_Qwen/Grounding/train.json"
 DS_CONFIG_PATH="scripts/zero3_offload.json"
 
