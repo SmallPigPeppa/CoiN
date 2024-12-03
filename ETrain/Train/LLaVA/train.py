@@ -136,6 +136,7 @@ def train():
         ))
 
     model, tokenizer = create_LLaVA_model(training_args, model_args, data_args, bnb_model_from_pretrained_args, compute_dtype, local_rank)
+    
     if model_args.EWC:
         training_args.EWC = model_args.EWC
         model.base_model.model.EWC = model_args.EWC
@@ -151,11 +152,13 @@ def train():
 
     data_module = create_LLaVA_data_module(tokenizer, data_args, local_rank)
 
-    # if training_args.EWC:
-    #     fisher = torch.load(os.path.join(model_args.previous_task_model_path, 'fisher.bin'), map_location='cpu')
-    #     optpar = torch.load(os.path.join(model_args.previous_task_model_path, 'optpar.bin'), map_location='cpu')
-    #     model.fisher = fisher
-    #     model.optpar = optpar
+    if model_args.EWC and model_args.previous_task_model_path is not None:
+        fisher = torch.load(os.path.join(model_args.previous_task_model_path, 'fisher.bin'), map_location='cpu')
+        optpar = torch.load(os.path.join(model_args.previous_task_model_path, 'optpar.bin'), map_location='cpu')
+        fisher = {(k[6:] if k.startswith('model') else k): v for k, v in fisher.items()}
+        optpar = {(k[6:] if k.startswith('model') else k): v for k, v in optpar.items()}
+        model.base_model.model.fisher = fisher
+        model.base_model.model.optpar = optpar
 
     trainer = LLaVATrainer(model=model,
                     tokenizer=tokenizer,
@@ -164,23 +167,20 @@ def train():
     # if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
     #     trainer.train(resume_from_checkpoint=True)
     # else:
-    if training_args.LWF:
+
+    if model_args.LWF:
         final_logits = trainer.before_train()
 
         model, tokenizer = create_LLaVA_model(training_args, model_args, data_args, bnb_model_from_pretrained_args, compute_dtype, local_rank)
-        if model_args.EWC:
-            training_args.EWC = model_args.EWC
-            model.base_model.model.EWC = model_args.EWC
-            model.base_model.model.EWC_lambda = model_args.EWC_lambda
-        if model_args.LWF:
-            training_args.LWF = model_args.LWF
-            model.base_model.model.LWF = model_args.LWF
-            model.base_model.model.LWF_lambda = model_args.LWF_lambda
 
         if model_args.previous_task_model_path is not None:
             # load model from previous task
             load_model_from_previous_task(model, model_args)
 
+        if model_args.LWF:
+            training_args.LWF = model_args.LWF
+            model.base_model.model.LWF = model_args.LWF
+            model.base_model.model.LWF_lambda = model_args.LWF_lambda
         model.base_model.model.previous_logits = final_logits
 
         data_module = create_LLaVA_data_module(tokenizer, data_args, local_rank)
@@ -189,15 +189,15 @@ def train():
                         tokenizer=tokenizer,
                         args=training_args,
                         **data_module)
-    
+        
     trainer.train()
 
     trainer.save_state()
 
     trainer.save_trained_model(training_args)
     
-    # if training_args.EWC:
-    #     trainer.after_train()
+    if model_args.EWC:
+        trainer.after_train()   
     
 
 
